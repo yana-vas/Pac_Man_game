@@ -13,7 +13,7 @@ const char InkyCh = 'I';
 const char ClydeCh = 'C';
 
 // Cage exit coordinates
-const int CAGE_EXIT_ROW = 8;
+const int CAGE_EXIT_ROW = 7;
 const int CAGE_EXIT_COL = 9;
 
 
@@ -25,6 +25,10 @@ int currScore = 0;
 int BprevCol = 0;
 int BprevRow = 1;
 char BprevTile = ' ';
+
+int PprevCol = -1;
+int PprevRow = 0;
+char PprevTile = ' ';
 
 
 
@@ -149,15 +153,7 @@ int maxScore(char** matrix, int rows, int cols) {
     return counter;
 }
 
-void moveGhost(int& ghostRow, int& ghostCol, int targetRow, int targetCol, char ghostChar) {
-    double minDistance = INFINITY;
-    int bestMoveX = ghostRow, bestMoveY = ghostCol;
-    int bestDirection = -1;
-
-
-}
-
-void exitCageB(char** matrix, int rows, int cols, int& ghostRow, int& ghostCol, bool& exitedCage) {
+void exitCageB(int& ghostRow, int& ghostCol, bool& exitedCage) {
     //up    
     int addRow = -1;
     
@@ -171,11 +167,28 @@ void exitCageB(char** matrix, int rows, int cols, int& ghostRow, int& ghostCol, 
     exitedCage = true;
 }
 
-void activateB(int& bRow, int& bCol, int pacCol, int pacRow) {
+void exitCageP(int& ghostRow, int& ghostCol, bool& exitedCage) {
+    //up    
+    int addRow = -1;
+
+
+    matrix[ghostRow][ghostCol] = PprevTile; // Restore the previous tile
+
+    PprevTile = matrix[ghostRow + addRow][ghostCol];         // Save the new tile before overwriting
+    ghostRow += addRow;
+    matrix[ghostRow][ghostCol] = 'P';               // Update Blinky's position
+
+    if (ghostRow == CAGE_EXIT_ROW && ghostCol == CAGE_EXIT_COL) {
+        exitedCage = true;
+    }
+}
+
+
+void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrevCol, int& GhPrevRow, char& GhPrevTile, char ghChar) {
 
     int directions[4][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} }; // Up, Down, Left, Right ({r, c})
-    int opp_col = bCol - BprevCol;
-    int opp_row = bRow - BprevRow;
+    int opp_col = GhCol - GhPrevCol;
+    int opp_row = GhRow - GhPrevRow;
 
     int best_dcol = 0, best_drow = 0;
     double min_distance = 1e9;
@@ -187,8 +200,8 @@ void activateB(int& bRow, int& bCol, int pacCol, int pacRow) {
         int dcol = directions[i][1];
 
         // New position after the move
-        int ncol = bCol + dcol;
-        int nrow = bRow + drow;
+        int ncol = GhCol + dcol;
+        int nrow = GhRow + drow;
 
         // Skip the opposite direction
         if (ncol == opp_col && nrow == opp_row) continue;
@@ -199,7 +212,7 @@ void activateB(int& bRow, int& bCol, int pacCol, int pacRow) {
         valid_move_found = true;
 
         
-        double distance = sqrt((pacCol - ncol) * (pacCol - ncol) + (pacRow - nrow) * (pacRow - nrow));
+        double distance = sqrt((targetCol - ncol) * (targetCol - ncol) + (targetRow - nrow) * (targetRow - nrow));
 
         
         if (distance < min_distance) {
@@ -210,11 +223,11 @@ void activateB(int& bRow, int& bCol, int pacCol, int pacRow) {
     }
 
     if (!valid_move_found) {
-        int ncol = bCol + opp_col;
-        int nrow = bRow + opp_row;
+        int ncol = GhCol + opp_col;
+        int nrow = GhRow + opp_row;
         if (ncol >= 0 && ncol < cols && nrow >= 0 && nrow < rows &&
             matrix[nrow][ncol] != '#' && matrix[nrow][ncol] != 'C' &&
-            matrix[nrow][ncol] != 'I' && matrix[nrow][ncol] != 'P') {
+            matrix[nrow][ncol] != 'I' && matrix[nrow][ncol] != 'P' && matrix[nrow][ncol] != 'B') {
             best_dcol = opp_col;
             best_drow = opp_row;
         }
@@ -223,30 +236,31 @@ void activateB(int& bRow, int& bCol, int pacCol, int pacRow) {
         }
     }
 
-    BprevCol = bCol;
-    BprevRow = bRow;
+    GhPrevCol = GhCol;
+    GhPrevRow = GhRow;
 
-    bCol += best_dcol;
-    bRow += best_drow;
-
-    
-    matrix[BprevRow][BprevCol] = BprevTile;
-    BprevTile = matrix[bRow][bCol];
-    matrix[bRow][bCol] = 'B';
+    GhCol += best_dcol;
+    GhRow += best_drow;
 
     
-    if (bCol == pacCol && bRow == pacRow) {
+    matrix[GhPrevRow][GhPrevCol] = GhPrevTile;
+    GhPrevTile = matrix[GhRow][GhCol];
+    matrix[GhRow][GhCol] = ghChar;
+
+    
+    if (GhCol == targetCol && GhRow == targetRow) {
         gameOver = true;
     }
 }
 
 
 
-void activateP(int& PRow, int& PCol, int pacRow, int pacCol, char pacOrientation, bool& gameOver, int& lastDirectionP, char& prevTileP) {
+void activateP(int& PRow, int& PCol, int pacRow, int pacCol, char pacOrientation) {
     // Pinky targets 4 tiles ahead of Pac-Man in the direction Pac-Man is facing
     int targetRow = pacRow, targetCol = pacCol;
     if (pacOrientation == 'w' || pacOrientation == 'W') { // Up
         targetRow -= 4;
+        targetCol -= 4;
     }
     else if (pacOrientation == 'a' || pacOrientation == 'A') { // Left
         targetCol -= 4;
@@ -265,7 +279,7 @@ void activateP(int& PRow, int& PCol, int pacRow, int pacCol, char pacOrientation
     if (targetCol < 0) targetCol = 0;
     else if (targetCol >= cols) targetCol = cols - 1;
 
-    moveGhost(PRow, PCol, targetRow, targetCol, PinkyCh);
+    moveGhost(PRow, PCol, targetCol, targetRow, PprevCol, PprevRow, PprevTile, PinkyCh);
 
     // Check if Pinky caught Pac-Man
     if (PRow == pacRow && PCol == pacCol) {
@@ -284,6 +298,7 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
 
     bool frightenedMode = false;
     bool BhasExitedCage = false;
+    bool PhasExitedCage = false;
 
 
     while (!gameOver) {
@@ -310,14 +325,19 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
 
         // Activate ghosts
         if (!BhasExitedCage) {
-            exitCageB(matrix, rows, cols, BRow, BCol, BhasExitedCage);
+            exitCageB(BRow, BCol, BhasExitedCage);
         }
         else {
-            activateB(BRow, BCol, pacRow, pacCol);
+            moveGhost(BRow, BCol, pacRow, pacCol, BprevCol, BprevRow, BprevTile, BlinkyCh);
         }
-        /*if (score >= 20) {
-            activateP(matrix, rows, cols, PRow, PCol, pacRow, pacCol, pacOrientation, gameOver, lastDirectionP, prevTileP);
-        }*/
+        if (score >= 20) {
+            if (!PhasExitedCage) {
+                exitCageP(PRow, PCol, PhasExitedCage);
+            }
+            else {
+                activateP(PRow, PCol, pacRow, pacCol, pacOrientation);
+            }
+        }
         // TO-DO: Add Inky and Clyde activation logic here
 
         if (gameOver) {
