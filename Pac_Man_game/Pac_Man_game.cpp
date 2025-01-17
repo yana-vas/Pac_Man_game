@@ -3,6 +3,9 @@
 #include <windows.h>
 #include <cmath>
 
+
+bool gameOver = false;
+
 const char pacManCh = 'Y';
 const char BlinkyCh = 'B';
 const char PinkyCh = 'P';
@@ -13,14 +16,16 @@ const char ClydeCh = 'C';
 const int CAGE_EXIT_ROW = 8;
 const int CAGE_EXIT_COL = 9;
 
-// Directions: Up, Down, Left, Right
-const int dx[] = { -1, 1, 0, 0 };
-const int dy[] = { 0, 0, -1, 1 };
-//const char dirChars[] = { 'U', 'D', 'L', 'R' };
 
 char** matrix = nullptr;
 int rows = 0, cols = 0;
 int currScore = 0;
+
+
+int BprevCol = 0;
+int BprevRow = 1;
+char BprevTile = ' ';
+
 
 
 void loadMap(const char* filePath, char**& matrix, int& rows, int& cols) {
@@ -67,7 +72,7 @@ bool isInsideCage(int x, int y) {
     return (x >= CAGE_TOP_ROW && x <= CAGE_BOTTOM_ROW && y >= CAGE_LEFT_COL && y <= CAGE_RIGHT_COL);
 }
 
-void findCharacter(char** matrix, int rows, int cols, int& chRow, int& chCol, char ch) {
+void findCharacter(int& chRow, int& chCol, char ch) {
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
             if (matrix[i][j] == ch) {
@@ -81,7 +86,7 @@ void findCharacter(char** matrix, int rows, int cols, int& chRow, int& chCol, ch
     chCol = -1;
 }
 
-void movePacMan(char** matrix, int rows, int cols, int& pacRow, int& pacCol, char direction, int& score, bool& frightenedMode) {
+void movePacMan(int& pacRow, int& pacCol, char direction, int& score, bool& frightenedMode) {
     int newRow = pacRow;
     int newCol = pacCol;
 
@@ -98,11 +103,14 @@ void movePacMan(char** matrix, int rows, int cols, int& pacRow, int& pacCol, cha
         newCol++;
     }
 
-    // Validate the new position
+    
     if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
         char target = matrix[newRow][newCol];
+        if ((target == 'B') || (target == 'P') || (target == 'C') || (target == 'I')) {
+            gameOver = true;
+        }
         if (target == '-' || target == '@' || target == ' ') {
-            // Update positions
+        
             matrix[pacRow][pacCol] = ' ';
             matrix[newRow][newCol] = pacManCh;
 
@@ -141,11 +149,7 @@ int maxScore(char** matrix, int rows, int cols) {
     return counter;
 }
 
-bool isGhostCh(char** matrix, int newX, int newY) {
-    return matrix[newX][newY] == BlinkyCh && matrix[newX][newY] == PinkyCh && matrix[newX][newY] == InkyCh && matrix[newX][newY] == ClydeCh;
-}
-
-void moveGhost(char** matrix, int rows, int cols, int& ghostRow, int& ghostCol, int targetRow, int targetCol, char ghostChar, int& lastDirection, char& prevTile) {
+void moveGhost(int& ghostRow, int& ghostCol, int targetRow, int targetCol, char ghostChar) {
     double minDistance = INFINITY;
     int bestMoveX = ghostRow, bestMoveY = ghostCol;
     int bestDirection = -1;
@@ -155,65 +159,87 @@ void moveGhost(char** matrix, int rows, int cols, int& ghostRow, int& ghostCol, 
 
 void exitCageB(char** matrix, int rows, int cols, int& ghostRow, int& ghostCol, bool& exitedCage) {
     //up    
-    ghostRow -= 1;
+    int addRow = -1;
+    
+    
+    matrix[ghostRow][ghostCol] = BprevTile; // Restore the previous tile
+    
+    BprevTile = matrix[ghostRow+addRow][ghostCol];         // Save the new tile before overwriting
+    ghostRow += addRow;
+    matrix[ghostRow][ghostCol] = 'B';               // Update Blinky's position
+
     exitedCage = true;
 }
 
-void activateB(int& bx, int& by, int& prevX, int& prevY, int pacX, int pacY, bool& gameOver, int& lastDirectionB, char& prevTileB) {
-    int bestCol = 0, bestRow = 0;
+void activateB(int& bRow, int& bCol, int pacCol, int pacRow) {
 
-    // - Blinky's current position: (bx, by)
-    // - Blinky's previous position: (prevX, prevY)
-    // - Pac-Man's position: (px, py)
-    // - Game map: a 2D array (0 = empty, 1 = wall, 'C', 'I', 'P' = other ghosts)
+    int directions[4][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} }; // Up, Down, Left, Right ({r, c})
+    int opp_col = bCol - BprevCol;
+    int opp_row = bRow - BprevRow;
 
-    int directions[4][2] = { {0, -1}, {0, 1}, {-1, 0}, {1, 0} }; // Up, Down, Left, Right
-    int opp_x = bx - prevX;
-    int opp_y = by - prevY;
-
-    int best_dx = 0, best_dy = 0;
+    int best_dcol = 0, best_drow = 0;
     double min_distance = 1e9;
-    bool valid_move_found = false; 
+    bool valid_move_found = false;
 
     // Loop through all directions
     for (int i = 0; i < 4; i++) {
-        int dx = directions[i][0];
-        int dy = directions[i][1];
+        int drow = directions[i][0];
+        int dcol = directions[i][1];
 
         // New position after the move
-        int nx = bx + dx;
-        int ny = by + dy;
+        int ncol = bCol + dcol;
+        int nrow = bRow + drow;
 
-        
-        if (dx == opp_x && dy == opp_y) continue;
+        // Skip the opposite direction
+        if (ncol == opp_col && nrow == opp_row) continue;
 
-        
-        if (matrix[nx][ny] == '#' || matrix[nx][ny] == 'C' || matrix[nx][ny] == 'I' || matrix[nx][ny] == 'P') continue;
+        // Skip if the move leads to a wall or another ghost
+        if (matrix[nrow][ncol] == '#' || matrix[nrow][ncol] == 'C' || matrix[nrow][ncol] == 'I' || matrix[nrow][ncol] == 'P') continue;
 
         valid_move_found = true;
+
         
-        double distance = sqrt(( - nx) * (pacX - nx) + (pacY - ny) * (pacY - ny));
+        double distance = sqrt((pacCol - ncol) * (pacCol - ncol) + (pacRow - nrow) * (pacRow - nrow));
 
         
         if (distance < min_distance) {
             min_distance = distance;
-            best_dx = dx;
-            best_dy = dy;
+            best_dcol = dcol;
+            best_drow = drow;
         }
     }
 
     if (!valid_move_found) {
-        best_dx = opp_x;
-        best_dy = opp_y;
+        int ncol = bCol + opp_col;
+        int nrow = bRow + opp_row;
+        if (ncol >= 0 && ncol < cols && nrow >= 0 && nrow < rows &&
+            matrix[nrow][ncol] != '#' && matrix[nrow][ncol] != 'C' &&
+            matrix[nrow][ncol] != 'I' && matrix[nrow][ncol] != 'P') {
+            best_dcol = opp_col;
+            best_drow = opp_row;
+        }
+        else {
+            // TO-DO (if needed) handle the case where no valid move is found
+        }
     }
 
-    prevX = bx;
-    prevY = by;
-    bx += best_dx;
-    by += best_dy;
+    BprevCol = bCol;
+    BprevRow = bRow;
 
-    moveGhost(matrix, rows, cols, bx, by, pacX, pacY, BlinkyCh, lastDirectionB, prevTileB);
+    bCol += best_dcol;
+    bRow += best_drow;
+
+    
+    matrix[BprevRow][BprevCol] = BprevTile;
+    BprevTile = matrix[bRow][bCol];
+    matrix[bRow][bCol] = 'B';
+
+    
+    if (bCol == pacCol && bRow == pacRow) {
+        gameOver = true;
+    }
 }
+
 
 
 void activateP(int& PRow, int& PCol, int pacRow, int pacCol, char pacOrientation, bool& gameOver, int& lastDirectionP, char& prevTileP) {
@@ -239,7 +265,7 @@ void activateP(int& PRow, int& PCol, int pacRow, int pacCol, char pacOrientation
     if (targetCol < 0) targetCol = 0;
     else if (targetCol >= cols) targetCol = cols - 1;
 
-    moveGhost(matrix, rows, cols, PRow, PCol, targetRow, targetCol, PinkyCh, lastDirectionP, prevTileP);
+    moveGhost(PRow, PCol, targetRow, targetCol, PinkyCh);
 
     // Check if Pinky caught Pac-Man
     if (PRow == pacRow && PCol == pacCol) {
@@ -257,20 +283,14 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
     }
 
     bool frightenedMode = false;
-    bool gameOver = false;
-    bool BhasExitedCage = false; // Track if Blinky has exited the cage
+    bool BhasExitedCage = false;
 
-    // Last move directions for ghosts
-    int lastDirectionB = -1, lastDirectionP = -1, lastDirectionI = -1, lastDirectionC = -1;
-
-    // Previous tiles for ghosts (by default ' ')
-    char prevTileB = ' ', prevTileP = ' ', prevTileI = ' ', prevTileC = ' ';
 
     while (!gameOver) {
         clearScreen();
         printMatrix(matrix, rows, cols);
 
-        // Display score
+        // Display
         std::cout << "Score: " << score << std::endl;
         std::cout << "\nEnter direction (w/a/s/d) or q to quit: ";
         char direction;
@@ -280,16 +300,25 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
             break;
         }
 
-        pacOrientation = direction; // Update Pac-Man's orientation
-        movePacMan(matrix, rows, cols, pacRow, pacCol, direction, score, frightenedMode);
+        pacOrientation = direction;
+        movePacMan(pacRow, pacCol, direction, score, frightenedMode);
+        
+        if (gameOver) {
+            std::cout << "Game Over! A ghost caught Pac-Man!" << std::endl;
+            break;
+        }
 
         // Activate ghosts
-        exitCageB(matrix, rows, cols, BRow, BCol, BhasExitedCage);
-        activateB(matrix, rows, cols, BRow, BCol, pacRow, pacCol, gameOver, BhasExitedCage, lastDirectionB, prevTileB);
+        if (!BhasExitedCage) {
+            exitCageB(matrix, rows, cols, BRow, BCol, BhasExitedCage);
+        }
+        else {
+            activateB(BRow, BCol, pacRow, pacCol);
+        }
         /*if (score >= 20) {
             activateP(matrix, rows, cols, PRow, PCol, pacRow, pacCol, pacOrientation, gameOver, lastDirectionP, prevTileP);
         }*/
-        // Add Inky and Clyde activation logic here
+        // TO-DO: Add Inky and Clyde activation logic here
 
         if (gameOver) {
             std::cout << "Game Over! A ghost caught Pac-Man!" << std::endl;
@@ -311,20 +340,22 @@ int main() {
         int goalScore = maxScore(matrix, rows, cols);
 
         int pacRow = 0, pacCol = 0;
-        findCharacter(matrix, rows, cols, pacRow, pacCol, 'Y');
+        findCharacter(pacRow, pacCol, 'Y');
         char pacOrientation = 'd'; // Default value
 
         int BRow = 0, BCol = 0;
-        findCharacter(matrix, rows, cols, BRow, BCol, 'B');
+        findCharacter(BRow, BCol, 'B');
 
         int PRow = 0, PCol = 0;
-        findCharacter(matrix, rows, cols, PRow, PCol, 'P');
+        findCharacter(PRow, PCol, 'P');
 
         int IRow = 0, ICol = 0;
-        findCharacter(matrix, rows, cols, IRow, ICol, 'I');
+        findCharacter(IRow, ICol, 'I');
+
 
         int CRow = 0, CCol = 0;
-        findCharacter(matrix, rows, cols, CRow, CCol, 'C');
+        findCharacter(CRow, CCol, 'C');
+
 
         // Validate
         if (pacRow == -1 || pacCol == -1 ||
