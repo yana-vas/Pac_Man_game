@@ -30,6 +30,13 @@ int PprevCol = -1;
 int PprevRow = 0;
 char PprevTile = ' ';
 
+int IprevCol = -1;
+int IprevRow = 0;
+char IprevTile = ' ';
+
+int CprevCol = -1;
+int CprevRow = 0;
+char CprevTile = ' ';
 
 
 void loadMap(const char* filePath, char**& matrix, int& rows, int& cols) {
@@ -153,30 +160,54 @@ int maxScore(char** matrix, int rows, int cols) {
     return counter;
 }
 
-void exitCageB(int& ghostRow, int& ghostCol, bool& exitedCage) {
+void exitCageUP(int& ghostRow, int& ghostCol, bool& exitedCage, char GhChar, char& GhPrevTile, int& GhPrevCol, int& GhPrevRow) {
     //up    
     int addRow = -1;
-    
-    
-    matrix[ghostRow][ghostCol] = BprevTile; // Restore the previous tile
-    
-    BprevTile = matrix[ghostRow+addRow][ghostCol];         // Save the new tile before overwriting
-    ghostRow += addRow;
-    matrix[ghostRow][ghostCol] = 'B';               // Update Blinky's position
 
-    exitedCage = true;
+
+    matrix[ghostRow][ghostCol] = GhPrevTile;
+
+    GhPrevTile = matrix[ghostRow + addRow][ghostCol];
+    ghostRow += addRow;
+    matrix[ghostRow][ghostCol] = GhChar;
+
+    GhPrevRow = addRow;
+
+    if (ghostRow == CAGE_EXIT_ROW && ghostCol == CAGE_EXIT_COL) {
+        exitedCage = true;
+    }
 }
 
-void exitCageP(int& ghostRow, int& ghostCol, bool& exitedCage) {
-    //up    
-    int addRow = -1;
+void exitCageLeft(int& ghostRow, int& ghostCol, bool& exitedCage, char GhChar, char& GhPrevTile, int& GhPrevCol, int& GhPrevRow) {
+    //left    
+    int addCol = -1;
 
 
-    matrix[ghostRow][ghostCol] = PprevTile; // Restore the previous tile
+    matrix[ghostRow][ghostCol] = GhPrevTile;
 
-    PprevTile = matrix[ghostRow + addRow][ghostCol];         // Save the new tile before overwriting
-    ghostRow += addRow;
-    matrix[ghostRow][ghostCol] = 'P';               // Update Blinky's position
+    GhPrevTile = matrix[ghostRow][ghostCol + addCol];
+    ghostCol += addCol;
+    matrix[ghostRow][ghostCol] = GhChar;
+
+    GhPrevCol = addCol;
+
+    if (ghostRow == CAGE_EXIT_ROW && ghostCol == CAGE_EXIT_COL) {
+        exitedCage = true;
+    }
+}
+
+void exitCageRight(int& ghostRow, int& ghostCol, bool& exitedCage, char GhChar, char& GhPrevTile, int& GhPrevCol, int& GhPrevRow) {
+    //left    
+    int addCol = 1;
+
+
+    matrix[ghostRow][ghostCol] = GhPrevTile;
+
+    GhPrevTile = matrix[ghostRow][ghostCol + addCol];
+    ghostCol += addCol;
+    matrix[ghostRow][ghostCol] = GhChar;
+
+    GhPrevCol = addCol;
 
     if (ghostRow == CAGE_EXIT_ROW && ghostCol == CAGE_EXIT_COL) {
         exitedCage = true;
@@ -254,7 +285,6 @@ void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrev
 }
 
 
-
 void activateP(int& PRow, int& PCol, int pacRow, int pacCol, char pacOrientation) {
     // Pinky targets 4 tiles ahead of Pac-Man in the direction Pac-Man is facing
     int targetRow = pacRow, targetCol = pacCol;
@@ -299,6 +329,11 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
     bool frightenedMode = false;
     bool BhasExitedCage = false;
     bool PhasExitedCage = false;
+    bool IhasExitedCage = false;
+    bool ChasExitedCage = false;
+
+    bool Ileft = false;
+    bool Cright = false;
 
 
     while (!gameOver) {
@@ -325,20 +360,47 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
 
         // Activate ghosts
         if (!BhasExitedCage) {
-            exitCageB(BRow, BCol, BhasExitedCage);
+            exitCageUP(BRow, BCol, BhasExitedCage, BlinkyCh, BprevTile, BprevCol, BprevRow);
         }
         else {
             moveGhost(BRow, BCol, pacRow, pacCol, BprevCol, BprevRow, BprevTile, BlinkyCh);
         }
         if (score >= 20) {
             if (!PhasExitedCage) {
-                exitCageP(PRow, PCol, PhasExitedCage);
+                exitCageUP(PRow, PCol, PhasExitedCage, PinkyCh, PprevTile, PprevCol, PprevRow);
             }
             else {
                 activateP(PRow, PCol, pacRow, pacCol, pacOrientation);
             }
         }
-        // TO-DO: Add Inky and Clyde activation logic here
+        if (score >= 40) {
+            if (!IhasExitedCage) {
+                if (Ileft) {
+                    exitCageUP(IRow, ICol, IhasExitedCage, InkyCh, IprevTile, IprevCol, IprevRow);
+                }
+                else {
+                    exitCageLeft(IRow, ICol, IhasExitedCage, InkyCh, IprevTile, IprevCol, IprevRow);
+                    Ileft = true;
+                }
+            }
+            else {
+                //
+            }
+        }
+        if (score >= 60) {
+            if (!ChasExitedCage) {
+                if (Cright) {
+                    exitCageUP(CRow, CCol, ChasExitedCage, ClydeCh, CprevTile, CprevCol, CprevRow);
+                }
+                else {
+                    exitCageRight(CRow, CCol, ChasExitedCage, ClydeCh, CprevTile, CprevCol, CprevRow);
+                    Cright = true;
+                }
+            }
+            else {
+                // TO-DO
+            }
+        }
 
         if (gameOver) {
             std::cout << "Game Over! A ghost caught Pac-Man!" << std::endl;
