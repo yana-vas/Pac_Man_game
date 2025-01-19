@@ -2,9 +2,15 @@
 #include <fstream>
 #include <windows.h>
 #include <cmath>
+#include <ctime>
+#include <cstdlib>
 
 
 bool gameOver = false;
+bool frightenedMode = false;
+bool switchMode = false;
+
+int frightenedCounter = 0;
 
 const char pacManCh = 'Y';
 const char BlinkyCh = 'B';
@@ -21,21 +27,21 @@ char** matrix = nullptr;
 int rows = 0, cols = 0;
 int currScore = 0;
 
-
+// { {-1, 0}, {0, -1}, {1, 0}, {0, 1} }; // Up, Left, Down, Right ({r, c})
 int BprevCol = 0;
 int BprevRow = 1;
 char BprevTile = ' ';
 
-int PprevCol = 1;
-int PprevRow = 0;
+int PprevCol = 0;
+int PprevRow = 1;
 char PprevTile = ' ';
 
-int IprevCol = 0;
-int IprevRow = 1;
+int IprevCol = 1;
+int IprevRow = 0;
 char IprevTile = ' ';
 
-int CprevCol = 0;
-int CprevRow = -1;
+int CprevCol = -1;
+int CprevRow = 0;
 char CprevTile = ' ';
 
 
@@ -97,40 +103,86 @@ void findCharacter(int& chRow, int& chCol, char ch) {
     chCol = -1;
 }
 
+bool isValidMove(int newRow, int newCol) {
+    return (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols &&
+        (matrix[newRow][newCol] == '-' || matrix[newRow][newCol] == '@' || matrix[newRow][newCol] == ' '));
+}
+
+void updateFrightenedMode(bool& frightenedMode, int& frightenedCounter) {
+    if (frightenedMode) {
+        frightenedCounter++;
+        if (frightenedCounter == 10) {
+            frightenedMode = false;
+            frightenedCounter = 0;
+        }
+    }
+}
+
+void calculateNewPosition(int& newRow, int& newCol, char direction, int movementStep) {
+    if (direction == 'w' || direction == 'W') { // Up
+        newRow -= movementStep;
+    }
+    else if (direction == 'a' || direction == 'A') { // Left
+        newCol -= movementStep;
+    }
+    else if (direction == 's' || direction == 'S') { // Down
+        newRow += movementStep;
+    }
+    else if (direction == 'd' || direction == 'D') { // Right
+        newCol += movementStep;
+    }
+}
+
+void handleMove(int& pacRow, int& pacCol, int newRow, int newCol, int& score, char pacManCh) {
+    char target = matrix[newRow][newCol];
+    matrix[pacRow][pacCol] = ' '; // Clear old position
+    matrix[newRow][newCol] = pacManCh; // Update new position
+
+    pacRow = newRow;
+    pacCol = newCol;
+
+    
+    if (target == '-' || target == '@') {
+        score++;
+    }
+}
+
 void movePacMan(int& pacRow, int& pacCol, char direction, int& score, bool& frightenedMode) {
     int newRow = pacRow;
     int newCol = pacCol;
 
-    if (direction == 'w' || direction == 'W') { // Up
-        newRow--;
-    }
-    else if (direction == 'a' || direction == 'A') { // Left
-        newCol--;
-    }
-    else if (direction == 's' || direction == 'S') { // Down
-        newRow++;
-    }
-    else if (direction == 'd' || direction == 'D') { // Right
-        newCol++;
-    }
+    // Calculate movement based on direction
+    int movementStep = (frightenedMode) ? 2 : 1;
+    int stepsCounter = 0;
+    while (movementStep--) {
+        //r, c, d
+        int tempRow = newRow;
+        int tempCol = newCol;
+        calculateNewPosition(tempRow, tempCol, direction, 1);
+        if (isValidMove(tempRow, tempCol)) {
+            newRow = tempRow;
+            newCol = tempCol;
 
-    
-    if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-        char target = matrix[newRow][newCol];
-        if ((target == 'B') || (target == 'P') || (target == 'C') || (target == 'I')) {
-            gameOver = true;
-        }
-        if (target == '-' || target == '@' || target == ' ') {
-        
-            matrix[pacRow][pacCol] = ' ';
-            matrix[newRow][newCol] = pacManCh;
+            char target = matrix[newRow][newCol];
 
-            pacRow = newRow;
-            pacCol = newCol;
-
-            if (target == '-' || target == '@') {
-                score++;
+            // Check for collision with enemies
+            if (target == 'B' || target == 'P' || target == 'C' || target == 'I') {
+                gameOver = true;
+                return;
             }
+
+            switchMode = false;
+            // Activate frightened mode
+            if (target == '@') {
+                frightenedMode = true;
+                frightenedCounter = 0;
+                switchMode = true;
+            }
+
+            // Update frightened mode
+            updateFrightenedMode(frightenedMode, frightenedCounter);
+
+            handleMove(pacRow, pacCol, newRow, newCol, score, pacManCh);
         }
     }
 }
@@ -214,7 +266,6 @@ void exitCageRight(int& ghostRow, int& ghostCol, bool& exitedCage, char GhChar, 
     }
 }
 
-
 void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrevCol, int& GhPrevRow, char& GhPrevTile, char ghChar) {
 
     int directions[4][2] = { {-1, 0}, {0, -1}, {1, 0}, {0, 1} }; // Up, Left, Down, Right ({r, c})
@@ -281,6 +332,64 @@ void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrev
     
     if (GhCol == targetCol && GhRow == targetRow) {
         gameOver = true;
+    }
+}
+
+void frightenedMoveGhost(int& GhRow, int& GhCol, int& GhPrevCol, int& GhPrevRow, char& GhPrevTile, char ghChar) {
+
+    // Directions: 0 = Up, 1 = Left, 2 = Down, 3 = Right
+    int directions[4][2] = { {-1, 0}, {0, -1}, {1, 0}, {0, 1} }; // {drow, dcol}
+    int opp_row = GhRow - GhPrevRow; // Opposite movement row delta
+    int opp_col = GhCol - GhPrevCol; // Opposite movement column delta
+
+    bool valid_move_found = false;
+    int chosen_direction = -1; // To store the chosen direction
+
+    srand(time(0));
+
+    while (!valid_move_found) {
+        // Pick a random direction (0 to 3)
+        chosen_direction = rand() % 4;
+        int drow = directions[chosen_direction][0];
+        int dcol = directions[chosen_direction][1];
+
+        // Calculate the new position
+        int nrow = GhRow + drow;
+        int ncol = GhCol + dcol;
+
+        // Check if the move is valid
+        if (drow == -opp_row && dcol == -opp_col) continue; // Prevent reverse movement
+        if (nrow < 0 || nrow >= rows || ncol < 0 || ncol >= cols) continue; // Out of bounds
+        if (matrix[nrow][ncol] == '#') {
+            valid_move_found = true;
+            continue;
+        }
+
+        // Handle collisions with other ghosts or special tiles
+        switch (matrix[nrow][ncol]) {
+        case 'B': // Blinky
+            nrow = 1; ncol = cols - 1; break;
+        case 'P': // Pinky
+            nrow = 1; ncol = 1; break;
+        case 'I': // Inky
+            nrow = rows - 1; ncol = cols - 1; break;
+        case 'C': // Clyde
+            nrow = rows - 1; ncol = 1; break;
+        }
+
+        // If all checks pass, the move is valid
+        valid_move_found = true;
+
+        // Update the ghost's position
+        matrix[GhPrevRow][GhPrevCol] = GhPrevTile; // Restore the previous tile
+        GhPrevTile = matrix[nrow][ncol]; // Save the new previous tile
+        matrix[nrow][ncol] = ghChar; // Place the ghost in the new position
+
+        // Update ghost's coordinates
+        GhPrevRow = GhRow;
+        GhPrevCol = GhCol;
+        GhRow = nrow;
+        GhCol = ncol;
     }
 }
 
@@ -364,7 +473,7 @@ void activateC(int& GhRow, int& GhCol, int pacRow, int pacCol, int& GhPrevRow, i
     }
 }
 
-void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation,
+void runGame(int& score, char& pacOrientation,
     int& pacRow, int& pacCol, int& BRow, int& BCol, int& PRow, int& PCol,
     int& IRow, int& ICol, int& CRow, int& CCol) {
     if (pacRow == -1 || pacCol == -1) {
@@ -393,6 +502,11 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
         char direction;
         std::cin >> direction;
 
+        if (direction != 'q' && direction != 'w' && direction != 'a' && direction != 's' && direction != 'd') {
+            std::cout << "\nInvalid direction! \nEnter direction (w/a/s/d) or q to quit: ";
+            std::cin >> direction;
+        }
+
         if (direction == 'q') {
             break;
         }
@@ -403,6 +517,28 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
         if (gameOver) {
             std::cout << "Game Over! A ghost caught Pac-Man!" << std::endl;
             break;
+        }
+
+        if (frightenedMode) {
+            if (switchMode) {
+                BRow -= BprevRow;
+                BCol -= BprevCol;
+
+                PRow -= PprevRow;
+                PCol -= PprevCol;
+
+                IRow -= IprevRow;
+                ICol -= IprevCol;
+
+                CRow -= CprevRow;
+                CCol -= CprevCol;
+                switchMode = false;
+            }
+            frightenedMoveGhost(BRow, BCol, BprevCol, BprevRow, BprevTile, BlinkyCh);
+            frightenedMoveGhost(PRow, PCol, PprevCol, PprevRow, PprevTile, PinkyCh);
+            frightenedMoveGhost(IRow, ICol, IprevCol, IprevRow, IprevTile, InkyCh);
+            frightenedMoveGhost(CRow, CCol, CprevCol, CprevRow, CprevTile, ClydeCh);
+            continue;
         }
 
         // Activate ghosts
@@ -495,7 +631,7 @@ int main() {
             std::cerr << "Error: Characters not found on the map!" << std::endl;
         }
         else {
-            runGame(matrix, rows, cols, currScore, pacOrientation, pacRow, pacCol, BRow, BCol, PRow, PCol, IRow, ICol, CRow, CCol);
+            runGame(currScore, pacOrientation, pacRow, pacCol, BRow, BCol, PRow, PCol, IRow, ICol, CRow, CCol);
         }
 
         cleanupMatrix(matrix, rows);
