@@ -26,16 +26,16 @@ int BprevCol = 0;
 int BprevRow = 1;
 char BprevTile = ' ';
 
-int PprevCol = -1;
+int PprevCol = 1;
 int PprevRow = 0;
 char PprevTile = ' ';
 
-int IprevCol = -1;
-int IprevRow = 0;
+int IprevCol = 0;
+int IprevRow = 1;
 char IprevTile = ' ';
 
-int CprevCol = -1;
-int CprevRow = 0;
+int CprevCol = 0;
+int CprevRow = -1;
 char CprevTile = ' ';
 
 
@@ -217,7 +217,7 @@ void exitCageRight(int& ghostRow, int& ghostCol, bool& exitedCage, char GhChar, 
 
 void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrevCol, int& GhPrevRow, char& GhPrevTile, char ghChar) {
 
-    int directions[4][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} }; // Up, Down, Left, Right ({r, c})
+    int directions[4][2] = { {-1, 0}, {0, -1}, {1, 0}, {0, 1} }; // Up, Left, Down, Right ({r, c})
     int opp_col = GhCol - GhPrevCol;
     int opp_row = GhRow - GhPrevRow;
 
@@ -235,7 +235,7 @@ void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrev
         int nrow = GhRow + drow;
 
         // Skip the opposite direction
-        if (ncol == opp_col && nrow == opp_row) continue;
+        if (dcol == -opp_col && drow == -opp_row) continue;
 
         // Skip if the move leads to a wall or another ghost
         if (matrix[nrow][ncol] == '#' || matrix[nrow][ncol] == 'C' || matrix[nrow][ncol] == 'I' || matrix[nrow][ncol] == 'P') continue;
@@ -263,7 +263,7 @@ void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrev
             best_drow = opp_row;
         }
         else {
-            // TO-DO (if needed) handle the case where no valid move is found
+            // (if needed) handle the case where no valid move is found
         }
     }
 
@@ -311,9 +311,56 @@ void activateP(int& PRow, int& PCol, int pacRow, int pacCol, char pacOrientation
 
     moveGhost(PRow, PCol, targetCol, targetRow, PprevCol, PprevRow, PprevTile, PinkyCh);
 
-    // Check if Pinky caught Pac-Man
-    if (PRow == pacRow && PCol == pacCol) {
-        gameOver = true;
+}
+
+void activateI(int& IRow, int& ICol, int pacRow, int pacCol, int BRow, int BCol, char pacOrientation) {
+    int referenceRow = pacRow;
+    int referenceCol = pacCol;
+
+    if (pacOrientation == 'w' || pacOrientation == 'W') { // Up
+        referenceRow -= 2;
+        referenceCol -= 2;
+    }
+    else if (pacOrientation == 's' || pacOrientation == 'S') { // Down
+        referenceRow += 2;
+    }
+    else if (pacOrientation == 'a' || pacOrientation == 'A') { // Left
+        referenceCol -= 2;
+    }
+    else if (pacOrientation == 'd' || pacOrientation == 'D') { // Right
+        referenceCol += 2;
+    }
+
+    int vectorRow = referenceRow - BRow;
+    int vectorCol = referenceCol - BCol;
+
+    vectorRow *= 2;
+    vectorCol *= 2;
+
+    
+    int targetRow = BRow + vectorRow;
+    int targetCol = BCol + vectorCol;
+
+    if (targetRow < 0) targetRow = 0;
+    else if (targetRow >= rows) targetRow = rows - 1;
+
+    if (targetCol < 0) targetCol = 0;
+    else if (targetCol >= cols) targetCol = cols - 1;
+
+    moveGhost(IRow, ICol, targetCol, targetRow, PprevCol, PprevRow, PprevTile, PinkyCh);
+
+}
+
+void activateC(int& GhRow, int& GhCol, int pacRow, int pacCol, int& GhPrevRow, int& GhPrevCol, char& GhPrevTile, char ghChar) {
+    double distance = std::sqrt((GhCol - pacCol) * (GhCol - pacCol) + (GhRow - pacRow) * (GhRow - pacRow));
+
+    if (distance >= 8) {
+        // Chase Pac-Man directly
+        moveGhost(GhRow, GhCol, pacRow, pacCol, GhPrevRow, GhPrevCol, GhPrevTile, ghChar);
+    }
+    else {
+        // Move toward lower-left corner
+        moveGhost(GhRow, GhCol, rows - 1, 0, GhPrevRow, GhPrevCol, GhPrevTile, ghChar);
     }
 }
 
@@ -384,7 +431,7 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
                 }
             }
             else {
-                //
+                activateI(IRow, ICol, pacRow, pacCol, BRow, BCol, pacOrientation);
             }
         }
         if (score >= 60) {
@@ -398,7 +445,7 @@ void runGame(char** matrix, int rows, int cols, int& score, char& pacOrientation
                 }
             }
             else {
-                // TO-DO
+                activateC(CRow, CCol, pacRow, pacCol, CprevRow, CprevCol, CprevTile, ClydeCh);
             }
         }
 
