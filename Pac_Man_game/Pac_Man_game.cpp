@@ -73,9 +73,12 @@ void loadMap(const char* filePath, char**& matrix, int& rows, int& cols) {
     file.close();
 }
 
-void cleanupMatrix(char** matrix, int rows) {
+void cleanupMatrix() {
+    if (!matrix) return;
     for (int i = 0; i < rows; ++i) {
-        delete[] matrix[i];
+        if (matrix[i]) {
+            delete[] matrix[i];
+        }
     }
     delete[] matrix;
 }
@@ -133,7 +136,16 @@ void calculateNewPosition(int& newRow, int& newCol, char direction, int movement
     }
 }
 
+bool isValidPosition(int row, int col) {
+    return row >= 0 && row < rows && col >= 0 && col < cols;
+}
+
 void handleMove(int& pacRow, int& pacCol, int newRow, int newCol, int& score, char pacManCh) {
+    if (!isValidPosition(newRow, newCol)) {
+        std::cerr << "Error: Invalid move to (" << newRow << ", " << newCol << ")" << std::endl;
+        return;
+    }
+
     char target = matrix[newRow][newCol];
     matrix[pacRow][pacCol] = ' '; // Clear old position
     matrix[newRow][newCol] = pacManCh; // Update new position
@@ -305,18 +317,20 @@ void moveGhost(int& GhRow, int& GhCol, int targetCol, int targetRow, int& GhPrev
     }
 
     if (!valid_move_found) {
-        int ncol = GhCol + opp_col;
-        int nrow = GhRow + opp_row;
-        if (ncol >= 0 && ncol < cols && nrow >= 0 && nrow < rows &&
-            matrix[nrow][ncol] != '#' && matrix[nrow][ncol] != 'C' &&
-            matrix[nrow][ncol] != 'I' && matrix[nrow][ncol] != 'P' && matrix[nrow][ncol] != 'B') {
-            best_dcol = opp_col;
-            best_drow = opp_row;
-        }
-        else {
-            // (if needed) handle the case where no valid move is found
+        for (int i = 0; i < 4; ++i) { // Iterate through all directions
+            int drow = directions[i][0];
+            int dcol = directions[i][1];
+            int nrow = GhRow + drow;
+            int ncol = GhCol + dcol;
+
+            if (isValidPosition(nrow, ncol) && matrix[nrow][ncol] != '#') {
+                best_drow = drow;
+                best_dcol = dcol;
+                break;
+            }
         }
     }
+
 
     GhPrevCol = GhCol;
     GhPrevRow = GhRow;
@@ -345,9 +359,9 @@ void frightenedMoveGhost(int& GhRow, int& GhCol, int& GhPrevCol, int& GhPrevRow,
     bool valid_move_found = false;
     int chosen_direction = -1; // To store the chosen direction
 
-    srand(time(0));
 
-    while (!valid_move_found) {
+    int retries = 10; // Limit attempts to 10
+    while (!valid_move_found && retries-- > 0) {
         // Pick a random direction (0 to 3)
         chosen_direction = rand() % 4;
         int drow = directions[chosen_direction][0];
@@ -478,7 +492,7 @@ void runGame(int& score, char& pacOrientation,
     int& IRow, int& ICol, int& CRow, int& CCol) {
     if (pacRow == -1 || pacCol == -1) {
         std::cerr << "Error: Pac-Man not found in the map." << std::endl;
-        cleanupMatrix(matrix, rows);
+        cleanupMatrix();
         exit(1);
     }
 
@@ -521,17 +535,17 @@ void runGame(int& score, char& pacOrientation,
 
         if (frightenedMode) {
             if (switchMode) {
-                BRow -= BprevRow;
-                BCol -= BprevCol;
+                BprevRow *= -1;
+                BprevCol *= -1;
 
-                PRow -= PprevRow;
-                PCol -= PprevCol;
+                PprevRow *= -1;
+                PprevCol *= -1;
 
-                IRow -= IprevRow;
-                ICol -= IprevCol;
+                IprevRow *= -1;
+                IprevCol *= -1;
 
-                CRow -= CprevRow;
-                CCol -= CprevCol;
+                CprevRow *= -1;
+                CprevCol *= -1;
                 switchMode = false;
             }
             frightenedMoveGhost(BRow, BCol, BprevCol, BprevRow, BprevTile, BlinkyCh);
@@ -591,7 +605,7 @@ void runGame(int& score, char& pacOrientation,
         }
     }
 
-    cleanupMatrix(matrix, rows);
+    cleanupMatrix();
 }
 
 
@@ -602,6 +616,8 @@ int main() {
     loadMap(mapPath, matrix, rows, cols);
 
     if (matrix) {
+        srand(time(0));
+
         int goalScore = maxScore(matrix, rows, cols);
 
         int pacRow = 0, pacCol = 0;
@@ -614,6 +630,7 @@ int main() {
         int PRow = 0, PCol = 0;
         findCharacter(PRow, PCol, 'P');
 
+
         int IRow = 0, ICol = 0;
         findCharacter(IRow, ICol, 'I');
 
@@ -624,17 +641,19 @@ int main() {
 
         // Validate
         if (pacRow == -1 || pacCol == -1 ||
-            BRow == -1 || BCol == -1 ||
+            BRow == -1 || BCol == -1 ||  
             PRow == -1 || PCol == -1 ||
             IRow == -1 || ICol == -1 ||
             CRow == -1 || CCol == -1) {
             std::cerr << "Error: Characters not found on the map!" << std::endl;
+            cleanupMatrix();
+            return 1;
         }
         else {
             runGame(currScore, pacOrientation, pacRow, pacCol, BRow, BCol, PRow, PCol, IRow, ICol, CRow, CCol);
         }
 
-        cleanupMatrix(matrix, rows);
+        cleanupMatrix();
     }
     else {
         std::cerr << "Error: Failed to load the map!" << std::endl;
