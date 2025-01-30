@@ -761,7 +761,7 @@ void runGame() {
 int main() {
     std::srand((unsigned)time(NULL));
 
-    const char* mapPath = "C:\\Users\\PC1\\source\\repos\\Pac_Man_game\\map.txt";
+    const char* mapPath = "../map.txt";
     loadMap(mapPath);
     if (!matrix) {
         std::cerr << "Error: Could not load map or invalid map data.\n";
