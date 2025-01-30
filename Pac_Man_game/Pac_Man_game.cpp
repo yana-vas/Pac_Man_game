@@ -1,8 +1,27 @@
-﻿#include <iostream>
-#include <fstream>
-#include <cstdlib>
+﻿/**
+ *
+ * Solution to course project # 5
+ * Introduction to programming course
+ * Faculty of Mathematics and Informatics of Sofia University
+ * Winter semester 2024/2025
+ *
+ * @author Yana Vasileva
+ * @idnumber 4MI0600494
+ * @compiler VC
+ *
+ * This file implements a text-based Pac-Man-like game:
+ * - Loads a map from file
+ * - Handles Pac-Man and ghost movement, collisions, and scoring
+ * - Manages frightened mode, win/lose conditions, and display updates
+ * 
+ */
+
+
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
+#include <fstream>
+#include <iostream>
 #include <windows.h>
 
 // -----------------------------------------------------
@@ -10,19 +29,19 @@
 // -----------------------------------------------------
 static const char PACMAN_CH = 'Y';
 static const char BLINKY_CH = 'B';
-static const char PINKY_CH  = 'P';
-static const char INKY_CH   = 'I';
-static const char CLYDE_CH  = 'C';
+static const char PINKY_CH = 'P';
+static const char INKY_CH = 'I';
+static const char CLYDE_CH = 'C';
 
-char** matrix   = nullptr;
-int rows        = 0;
-int cols        = 0;
+char** matrix = nullptr;
+int rows = 0;
+int cols = 0;
 
-bool gameOver         = false;
-bool frightenedMode   = false;
-bool switchMode       = false;    // To reverse directions once
-int  frightenedCounter= 0;
-int  currentScore     = 0;
+bool gameOver = false;
+bool frightenedMode = false;
+bool switchMode = false;    // To reverse directions once
+int  frightenedCounter = 0;
+int  currentScore = 0;
 
 // Track "previous tile" for each ghost so we can restore pellets/walls
 char BprevTile = ' ';
@@ -36,13 +55,22 @@ int PprevDr = 0, PprevDc = 0;
 int IprevDr = 0, IprevDc = 0;
 int CprevDr = 0, CprevDc = 0;
 
+// -----------------------------------------------------
+// NEW GLOBALS for positions/orientation/scores
+// -----------------------------------------------------
+int pacRow = 0, pacCol = 0;
+int Brow = 0, Bcol = 0;
+int Prow = 0, Pcol = 0;
+int Irow = 0, Icol = 0;
+int Crow = 0, Ccol = 0;
+char pacOrientation = 'd';
+int totalPellets = 0;
 
 // -----------------------------------------------------
 // UTILITY
 // -----------------------------------------------------
 void setConsoleColor(WORD color)
 {
-    
     SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
 }
 
@@ -60,7 +88,7 @@ void loadMap(const char* filePath) {
     file >> rows >> cols;
     file.ignore();
 
-    matrix = new char*[rows];
+    matrix = new char* [rows];
     for (int i = 0; i < rows; ++i) {
         matrix[i] = new char[cols + 1];
         file.getline(matrix[i], cols + 1);
@@ -77,44 +105,40 @@ void cleanupMatrix() {
     matrix = nullptr;
 }
 
+void setCharacterColor(char ch) {
+    switch (ch) {
+    case 'Y': // PACMAN_CH
+        setConsoleColor(14); // Yellow
+        break;
+    case 'B': // BLINKY_CH
+        setConsoleColor(12); // Light Red
+        break;
+    case 'P': // PINKY_CH
+        setConsoleColor(13); // Magenta
+        break;
+    case 'I': // INKY_CH
+        setConsoleColor(9);  // Blue
+        break;
+    case 'C': // CLYDE_CH
+        setConsoleColor(10); // Green
+        break;
+    default:
+        setConsoleColor(7);  // Default color
+        break;
+    }
+}
+
 void printMatrix() {
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             char ch = matrix[i][j];
-            switch (ch) {
-                case PACMAN_CH: // 'Y'
-                    setConsoleColor(14); // Yellow
-                    std::cout << ch;
-                    break;
-                case BLINKY_CH: // 'B'
-                    setConsoleColor(12); // Light Red
-                    std::cout << ch;
-                    break;
-                case PINKY_CH:  // 'P'
-                    setConsoleColor(13); // Magenta
-                    std::cout << ch;
-                    break;
-                case INKY_CH:   // 'I'
-                    setConsoleColor(9);  // Blue
-                    std::cout << ch;
-                    break;
-                case CLYDE_CH:  // 'C'
-                    setConsoleColor(10); // Green
-                    std::cout << ch;
-                    break;
-                default:
-                    // Everything else: walls, pellets, spaces => default color
-                    setConsoleColor(7);
-                    std::cout << ch;
-                    break;
-            }
+            setCharacterColor(ch);
+            std::cout << ch;
         }
-        // Reset to default
-        setConsoleColor(7);
+        setConsoleColor(7);  // Reset to default after each row
         std::cout << "\n";
     }
-    // Ensure color is reset
-    setConsoleColor(7);
+    setConsoleColor(7);  // Ensure color is reset at the end
 }
 
 int maxScorePellets() {
@@ -156,12 +180,12 @@ bool isValidMovePac(int r, int c) {
 bool isValidMoveGhost(int r, int c)
 {
     if (!isValidPosition(r, c)) return false;
-    
+
     if (matrix[r][c] == '#') return false;
-    
+
     if (matrix[r][c] == BLINKY_CH ||
-        matrix[r][c] == PINKY_CH  ||
-        matrix[r][c] == INKY_CH   ||
+        matrix[r][c] == PINKY_CH ||
+        matrix[r][c] == INKY_CH ||
         matrix[r][c] == CLYDE_CH)
     {
         return false;
@@ -184,37 +208,35 @@ void updateFrightenedMode() {
 // -----------------------------------------------------
 // CORNER TELEPORT for Ghosts in FRIGHTENED collision
 // -----------------------------------------------------
-void sendGhostToCorner(char ghostCh,
-    int& gRow, int& gCol,
-    char& prevTile,
-    int& prevDr, int& prevDc)
-{
+void getGhostCornerPosition(char ghostCh, int& gRow, int& gCol) {
+    switch (ghostCh) {
+    case BLINKY_CH: // Top-right corner
+        gRow = 1;
+        gCol = cols - 2;
+        break;
+    case PINKY_CH: // Top-left corner
+        gRow = 1;
+        gCol = 1;
+        break;
+    case INKY_CH: // Bottom-right corner
+        gRow = rows - 2;
+        gCol = cols - 2;
+        break;
+    case CLYDE_CH: // Bottom-left corner
+        gRow = rows - 2;
+        gCol = 1;
+        break;
+    default:
+        break;
+    }
+}
+
+void sendGhostToCorner(char ghostCh, int& gRow, int& gCol, char& prevTile, int& prevDr, int& prevDc) {
     // Restore whatever tile was there
     matrix[gRow][gCol] = prevTile;
 
-    // Choose corners for each ghost:
-    if (ghostCh == BLINKY_CH) {
-        // top-right corner
-        gRow = 1;
-        gCol = cols - 2;
-    }
-    else if (ghostCh == PINKY_CH) {
-        // top-left corner
-        gRow = 1;
-        gCol = 1;
-    }
-    else if (ghostCh == INKY_CH) {
-        // bottom-right corner
-        gRow = rows - 2;
-        gCol = cols - 2;
-    }
-    else if (ghostCh == CLYDE_CH) {
-        // bottom-left corner
-        gRow = rows - 2;
-        gCol = 1;
-    }
+    getGhostCornerPosition(ghostCh, gRow, gCol);
 
-    // Put ghost in corner, store old tile
     prevTile = matrix[gRow][gCol];
     matrix[gRow][gCol] = ghostCh;
 
@@ -235,64 +257,63 @@ void calculateNewPosition(int& r, int& c, char dir, int step) {
     }
 }
 
-void movePacMan(int& pacRow, int& pacCol,
-                char inputDir,
-                int& score)
-{
-    // Pac-Man moves 2 squares if frightened, else 1
+bool handleGhostCollision(char tile, int nr, int nc) {
+    if (!frightenedMode) {
+        gameOver = true;
+        std::cout << "Game Over! Caught by a ghost!\n";
+        return true;
+    }
+    else {
+        // If frightened => that ghost goes to its corner
+        switch (tile) {
+        case BLINKY_CH:
+            sendGhostToCorner(BLINKY_CH, nr, nc, BprevTile, BprevDr, BprevDc);
+            break;
+        case PINKY_CH:
+            sendGhostToCorner(PINKY_CH, nr, nc, PprevTile, PprevDr, PprevDc);
+            break;
+        case INKY_CH:
+            sendGhostToCorner(INKY_CH, nr, nc, IprevTile, IprevDr, IprevDc);
+            break;
+        case CLYDE_CH:
+            sendGhostToCorner(CLYDE_CH, nr, nc, CprevTile, CprevDr, CprevDc);
+            break;
+        }
+    }
+    return false;
+}
+
+void handlePowerPellet(char tile) {
+    if (tile == '@') {
+        frightenedMode = true;
+        frightenedCounter = 0;
+        switchMode = true;
+    }
+}
+
+
+void movePacMan(char inputDir) {
     int steps = (frightenedMode ? 2 : 1);
 
     while (steps-- > 0) {
-        int nr = pacRow;
-        int nc = pacCol;
+        int nr = pacRow, nc = pacCol;
         calculateNewPosition(nr, nc, inputDir, 1);
 
-        if (!isValidMovePac(nr, nc)) {
-            // can't move into wall or out-of-bounds
-            break;
-        }
+        if (!isValidMovePac(nr, nc)) break; // Invalid move
 
         char tile = matrix[nr][nc];
-        if (tile == BLINKY_CH || tile == PINKY_CH ||
-            tile == INKY_CH   || tile == CLYDE_CH)
-        {
-            // If not frightened => game over
-            if (!frightenedMode) {
-                gameOver = true;
-                std::cout << "Game Over! Caught by a ghost!\n";
-                return;
-            }
-            else {
-                // If frightened => that ghost goes to corner
-                if (tile == BLINKY_CH) {
-                    sendGhostToCorner(BLINKY_CH, nr, nc, BprevTile, BprevDr, BprevDc);
-                }
-                else if (tile == PINKY_CH) {
-                    sendGhostToCorner(PINKY_CH, nr, nc, PprevTile, PprevDr, PprevDc);
-                }
-                else if (tile == INKY_CH) {
-                    sendGhostToCorner(INKY_CH, nr, nc, IprevTile, IprevDr, IprevDc);
-                }
-                else if (tile == CLYDE_CH) {
-                    sendGhostToCorner(CLYDE_CH, nr, nc, CprevTile, CprevDr, CprevDc);
-                }
-                // Continue placing Pac-Man in that cell
-            }
+
+        // Handle ghost collision
+        if (tile == BLINKY_CH || tile == PINKY_CH || tile == INKY_CH || tile == CLYDE_CH) {
+            if (handleGhostCollision(tile, nr, nc)) return;
         }
 
-        // If power pellet, turn on frightened
-        if (tile == '@') {
-            frightenedMode = true;
-            frightenedCounter = 0;
-            switchMode = true;
-        }
+        handlePowerPellet(tile);
 
         matrix[pacRow][pacCol] = ' ';
         matrix[nr][nc] = PACMAN_CH;
 
-        if (tile == '-' || tile == '@') {
-            score++;
-        }
+        if (tile == '-' || tile == '@') currentScore++;
 
         pacRow = nr;
         pacCol = nc;
@@ -308,16 +329,15 @@ void movePacMan(int& pacRow, int& pacCol,
 //   - No passing walls
 //   - Priority: Up -> Left -> Down -> Right
 // -----------------------------------------------------
-void moveGhostChase(
-    int& gRow, int& gCol,
-    int& prevDr, int& prevDc,
-    char& prevTile,
-    char ghostCh,
-    int targetRow, int targetCol
-)
+struct Dir { int dr, dc; };
+
+void findBestDirection(
+    int gRow, int gCol,
+    int targetRow, int targetCol,
+    int prevDr, int prevDc,
+    int& chosenDR, int& chosenDC,
+    bool& foundValid)
 {
-    // Directions in priority order: Up, Left, Down, Right
-    struct Dir { int dr, dc; };
     Dir prio[4] = {
         { -1,  0 },  // Up
         {  0, -1 },  // Left
@@ -325,33 +345,22 @@ void moveGhostChase(
         {  0,  1 }   // Right
     };
 
-    // Put back the tile
-    matrix[gRow][gCol] = prevTile;
-
-    bool foundValid = false;
     double bestDist = 1e9;
-    int chosenDR = 0, chosenDC = 0;
-
     int oppDr = -prevDr, oppDc = -prevDc;
 
-    // Evaluate directions
     for (int i = 0; i < 4; i++) {
         int dr = prio[i].dr;
         int dc = prio[i].dc;
 
-        // skip immediate reverse
-        if (dr == oppDr && dc == oppDc) {
-            continue;
-        }
+        // Skip immediate reverse direction
+        if (dr == oppDr && dc == oppDc) continue;
 
         int nr = gRow + dr;
         int nc = gCol + dc;
-        if (!isValidMoveGhost(nr, nc)) {
-            continue;
-        }
+        if (!isValidMoveGhost(nr, nc)) continue;
 
-        double dist = sqrt((double)(targetRow - nr)*(targetRow - nr)
-                         + (double)(targetCol - nc)*(targetCol - nc));
+        double dist = sqrt((double)(targetRow - nr) * (targetRow - nr)
+            + (double)(targetCol - nc) * (targetCol - nc));
         if (dist < bestDist) {
             bestDist = dist;
             chosenDR = dr;
@@ -359,56 +368,86 @@ void moveGhostChase(
             foundValid = true;
         }
     }
+}
 
-    // If no valid forward direction found, try reverse or stand still
-    if (!foundValid) {
-        int nr = gRow + oppDr;
-        int nc = gCol + oppDc;
-        if (isValidMoveGhost(nr, nc)) {
-            chosenDR = oppDr;
-            chosenDC = oppDc;
-            foundValid = true;
+void handleNoValidDirection(
+    int gRow, int gCol,
+    int prevDr, int prevDc,
+    int& chosenDR, int& chosenDC,
+    bool& foundValid)
+{
+    int oppDr = -prevDr, oppDc = -prevDc;
+    int nr = gRow + oppDr;
+    int nc = gCol + oppDc;
+
+    if (isValidMoveGhost(nr, nc)) {
+        chosenDR = oppDr;
+        chosenDC = oppDc;
+        foundValid = true;
+    }
+    else {
+        chosenDR = 0;
+        chosenDC = 0;
+        foundValid = true;
+    }
+}
+
+void checkPacmanCollision(
+    char ghostCh,
+    int gRow, int gCol,
+    char& prevTile,
+    int& prevDr, int& prevDc)
+{
+    if (prevTile == PACMAN_CH) {
+        if (!frightenedMode) {
+            gameOver = true;
+            std::cout << "Game Over! A ghost caught Pac-Man!\n";
         }
         else {
-            chosenDR = 0;
-            chosenDC = 0;
-            foundValid = true;
+            sendGhostToCorner(ghostCh, gRow, gCol, prevTile, prevDr, prevDc);
         }
+    }
+}
+
+
+void moveGhostChase(
+    int& gRow, int& gCol,
+    int& prevDr, int& prevDc,
+    char& prevTile,
+    char ghostCh,
+    int targetRow, int targetCol)
+{
+    matrix[gRow][gCol] = prevTile;
+
+    int chosenDR = 0, chosenDC = 0;
+    bool foundValid = false;
+
+    findBestDirection(gRow, gCol, targetRow, targetCol, prevDr, prevDc, chosenDR, chosenDC, foundValid);
+
+    if (!foundValid) {
+        handleNoValidDirection(gRow, gCol, prevDr, prevDc, chosenDR, chosenDC, foundValid);
     }
 
     gRow += chosenDR;
     gCol += chosenDC;
 
     prevTile = matrix[gRow][gCol];
-
     matrix[gRow][gCol] = ghostCh;
-
     prevDr = chosenDR;
     prevDc = chosenDC;
 
-    // If new cell had Pac-Man => collision
-    if (prevTile == PACMAN_CH) {
-        if (!frightenedMode) {
-            gameOver = true;
-            std::cout << "Game Over! A ghost caught Pac-Man!\n";
-        } else {
-            sendGhostToCorner(ghostCh, gRow, gCol, prevTile, prevDr, prevDc);
-        }
-    }
+    checkPacmanCollision(ghostCh, gRow, gCol, prevTile, prevDr, prevDc);
 }
 
 // -----------------------------------------------------
 // GHOST MOVEMENT: FRIGHTENED (random)
 // -----------------------------------------------------
-void moveGhostFrightened(
+bool chooseRandomDirection(
     int& gRow, int& gCol,
     int& prevDr, int& prevDc,
-    char& prevTile,
-    char ghostCh
-)
+    char ghostCh,
+    char& prevTile)
 {
-    matrix[gRow][gCol] = prevTile;
-
     int directions[4][2] = {
         {-1, 0}, // Up
         { 0,-1}, // Left
@@ -417,75 +456,92 @@ void moveGhostFrightened(
     };
 
     int oppDr = -prevDr, oppDc = -prevDc;
-    bool moved = false;
     int tries = 10;
 
-    while (!moved && tries-- > 0) {
+    while (tries-- > 0) {
         int i = rand() % 4;
         int dr = directions[i][0];
         int dc = directions[i][1];
 
-        // skip immediate reverse
-        if (dr == oppDr && dc == oppDc) {
-            continue;
-        }
+        // Skip immediate reverse direction
+        if (dr == oppDr && dc == oppDc) continue;
+
         int nr = gRow + dr;
         int nc = gCol + dc;
 
-        if (!isValidMoveGhost(nr, nc)) {
-            continue;
-        }
+        if (!isValidMoveGhost(nr, nc)) continue;
 
-        // Move
+        // Move ghost
         gRow = nr;
         gCol = nc;
         prevTile = matrix[gRow][gCol];
         matrix[gRow][gCol] = ghostCh;
         prevDr = dr;
         prevDc = dc;
-        moved = true;
 
-        // Collide with Pac-Man => corner
+        // Check collision with Pac-Man
+        if (prevTile == PACMAN_CH) {
+            sendGhostToCorner(ghostCh, gRow, gCol, prevTile, prevDr, prevDc);
+        }
+
+        return true; // Successfully moved
+    }
+
+    return false; // No valid move found
+}
+
+void handleNoValidMove(
+    int& gRow, int& gCol,
+    int& prevDr, int& prevDc,
+    char ghostCh,
+    char& prevTile)
+{
+    int oppDr = -prevDr, oppDc = -prevDc;
+    int nr = gRow + oppDr;
+    int nc = gCol + oppDc;
+
+    if (isValidMoveGhost(nr, nc)) {
+        gRow = nr;
+        gCol = nc;
+        prevTile = matrix[gRow][gCol];
+        matrix[gRow][gCol] = ghostCh;
+        prevDr = oppDr;
+        prevDc = oppDc;
+
         if (prevTile == PACMAN_CH) {
             sendGhostToCorner(ghostCh, gRow, gCol, prevTile, prevDr, prevDc);
         }
     }
-    // If we fail all attempts, try reversing or stand still
-    if (!moved) {
-        int nr = gRow + oppDr;
-        int nc = gCol + oppDc;
-        if (isValidMoveGhost(nr, nc)) {
-            gRow = nr;
-            gCol = nc;
-            prevTile = matrix[gRow][gCol];
-            matrix[gRow][gCol] = ghostCh;
-            prevDr = oppDr;
-            prevDc = oppDc;
+    else {
+        // Stand still
+        matrix[gRow][gCol] = ghostCh;
+    }
+}
 
-            if (prevTile == PACMAN_CH) {
-                sendGhostToCorner(ghostCh, gRow, gCol, prevTile, prevDr, prevDc);
-            }
-        }
-        else {
-            // stand still
-            matrix[gRow][gCol] = ghostCh;
-        }
+void moveGhostFrightened(
+    int& gRow, int& gCol,
+    int& prevDr, int& prevDc,
+    char& prevTile,
+    char ghostCh)
+{
+    matrix[gRow][gCol] = prevTile;
+
+    if (!chooseRandomDirection(gRow, gCol, prevDr, prevDc, ghostCh, prevTile)) {
+        handleNoValidMove(gRow, gCol, prevDr, prevDc, ghostCh, prevTile);
     }
 }
 
 // -----------------------------------------------------
 // BLINKY/PINKY/INKY/CLYDE chase logic
 // -----------------------------------------------------
-void activateP(int& pRow, int& pCol,
-    int& pDr, int& pDc,
-    char& pPrevTile,
-    int pacRow, int pacCol,
-    char orientation)
+void activateP(char orientation)
 {
-    int targetR = pacRow, targetC = pacCol;
+    int targetR = pacRow;
+    int targetC = pacCol;
+    // Pinky tries to get 4 steps ahead
     if (orientation == 'w' || orientation == 'W') {
-        targetR -= 4; 
-        targetC -= 4; 
+        targetR -= 4;
+        targetC -= 4;
     }
     else if (orientation == 's' || orientation == 'S') {
         targetR += 4;
@@ -497,25 +553,20 @@ void activateP(int& pRow, int& pCol,
         targetC += 4;
     }
 
-    // Clamp
     if (targetR < 0) targetR = 0;
-    if (targetR >= rows) targetR = rows-1;
+    if (targetR >= rows) targetR = rows - 1;
     if (targetC < 0) targetC = 0;
-    if (targetC >= cols) targetC = cols-1;
+    if (targetC >= cols) targetC = cols - 1;
 
-    moveGhostChase(pRow, pCol, pDr, pDc, pPrevTile, PINKY_CH, targetR, targetC);
+    moveGhostChase(Prow, Pcol, PprevDr, PprevDc, PprevTile, PINKY_CH, targetR, targetC);
 }
 
-void activateI(int& iRow, int& iCol,
-    int& iDr, int& iDc,
-    char& iPrevTile,
-    int pacRow, int pacCol,
-    int bRow, int bCol,
-    char orientation)
+void activateI(int bRow, int bCol, char orientation)
 {
-    int refR = pacRow, refC = pacCol;
+    int refR = pacRow;
+    int refC = pacCol;
     if (orientation == 'w' || orientation == 'W') {
-        refR -= 2; 
+        refR -= 2;
         refC -= 2;
     }
     else if (orientation == 's' || orientation == 'S') {
@@ -533,104 +584,149 @@ void activateI(int& iRow, int& iCol,
     int targetR = bRow + vR;
     int targetC = bCol + vC;
     if (targetR < 0) targetR = 0;
-    if (targetR >= rows) targetR = rows-1;
+    if (targetR >= rows) targetR = rows - 1;
     if (targetC < 0) targetC = 0;
-    if (targetC >= cols) targetC = cols-1;
+    if (targetC >= cols) targetC = cols - 1;
 
-    moveGhostChase(iRow, iCol, iDr, iDc, iPrevTile, INKY_CH, targetR, targetC);
+    moveGhostChase(Irow, Icol, IprevDr, IprevDc, IprevTile, INKY_CH, targetR, targetC);
 }
 
-void activateC(int& cRow, int& cCol,
-    int& cDr, int& cDc,
-    char& cPrevTile,
-    int pacRow, int pacCol)
+void activateC()
 {
-    double dist = sqrt((double)(cCol - pacCol)*(cCol - pacCol)
-                     + (double)(cRow - pacRow)*(cRow - pacRow));
+    double dist = sqrt((double)(Ccol - pacCol) * (Ccol - pacCol)
+        + (double)(Crow - pacRow) * (Crow - pacRow));
     if (dist >= 8.0) {
-        moveGhostChase(cRow, cCol, cDr, cDc, cPrevTile, CLYDE_CH, pacRow, pacCol);
-    } else {
+        moveGhostChase(Crow, Ccol, CprevDr, CprevDc, CprevTile, CLYDE_CH, pacRow, pacCol);
+    }
+    else {
         // bottom-left corner
-        moveGhostChase(cRow, cCol, cDr, cDc, cPrevTile, CLYDE_CH, rows-1, 0);
+        moveGhostChase(Crow, Ccol, CprevDr, CprevDc, CprevTile, CLYDE_CH, rows - 1, 0);
+    }
+}
+
+// -----------------------------------------------------
+// Display & Win Checks
+// -----------------------------------------------------
+void updateDisplay() {
+    clearScreen();
+    printMatrix();
+    std::cout << "Score: " << currentScore << " / " << totalPellets << "\n";
+}
+
+bool checkWin() {
+    if (currentScore >= totalPellets) {
+        std::cout << "You Win! All pellets collected!\n";
+        return true;
+    }
+    return false;
+}
+
+char getPlayerMove() {
+    std::cout << "\nMove (w/a/s/d) or q to quit: ";
+    char moveKey;
+    std::cin >> moveKey;
+    return moveKey;
+}
+
+bool isValidMove(char moveKey) {
+    return moveKey == 'w' || moveKey == 'a' || moveKey == 's' || moveKey == 'd'
+        || moveKey == 'W' || moveKey == 'A' || moveKey == 'S' || moveKey == 'D';
+}
+
+// -----------------------------------------------------
+// GHOST DIRECTION REVERSAL (when frightened starts)
+// -----------------------------------------------------
+void reverseGhostDirections() {
+    BprevDr *= -1; BprevDc *= -1;
+    PprevDr *= -1; PprevDc *= -1;
+    IprevDr *= -1; IprevDc *= -1;
+    CprevDr *= -1; CprevDc *= -1;
+}
+
+// -----------------------------------------------------
+// FRIGHTENED and NORMAL MODE HANDLERS
+// -----------------------------------------------------
+void handleFrightenedMode() {
+    if (switchMode) {
+        reverseGhostDirections();
+        switchMode = false;
+    }
+
+    moveGhostFrightened(Brow, Bcol, BprevDr, BprevDc, BprevTile, BLINKY_CH);
+    if (gameOver) return;
+
+    moveGhostFrightened(Prow, Pcol, PprevDr, PprevDc, PprevTile, PINKY_CH);
+    if (gameOver) return;
+
+    moveGhostFrightened(Irow, Icol, IprevDr, IprevDc, IprevTile, INKY_CH);
+    if (gameOver) return;
+
+    moveGhostFrightened(Crow, Ccol, CprevDr, CprevDc, CprevTile, CLYDE_CH);
+    if (gameOver) return;
+}
+
+void handleNormalMode() {
+    // Blinky always active
+    moveGhostChase(Brow, Bcol, BprevDr, BprevDc, BprevTile, BLINKY_CH, pacRow, pacCol);
+    if (gameOver) return;
+
+    // Pinky after 20 points
+    if (currentScore >= 20) {
+        activateP(pacOrientation);
+        if (gameOver) return;
+    }
+
+    // Inky after 40 points
+    if (currentScore >= 40) {
+        activateI(Brow, Bcol, pacOrientation);
+        if (gameOver) return;
+    }
+
+    // Clyde after 60 points
+    if (currentScore >= 60) {
+        activateC();
+        if (gameOver) return;
     }
 }
 
 
-void runGame(int& pacRow, int& pacCol, char& pacOrientation,
-    int& Brow, int& Bcol,
-    int& Prow, int& Pcol,
-    int& Irow, int& Icol,
-    int& Crow, int& Ccol,
-    int totalPellets)
-{
+void runGame() {
     while (!gameOver) {
-        clearScreen();
-        printMatrix();
-        std::cout << "Score: " << currentScore << " / " << totalPellets << "\n";
+        updateDisplay();
 
-        // Win check
-        if (currentScore >= totalPellets) {
-            std::cout << "You Win! All pellets collected!\n";
+        if (checkWin()) {
             break;
         }
 
-        // Input
-        std::cout << "\nMove (w/a/s/d) or q to quit: ";
-        char moveKey;
-        std::cin >> moveKey;
-        if (moveKey == 'q') break;
-        if (moveKey!='w' && moveKey!='a' && moveKey!='s' && moveKey!='d') {
-            continue; // ignore invalid
+        char moveKey = getPlayerMove();
+        if (moveKey == 'q' || moveKey == 'Q') {
+            break;
         }
+
+        if (!isValidMove(moveKey)) {
+            continue; // Ignore invalid input
+        }
+
         pacOrientation = moveKey;
 
-        // Move Pac-Man
-        movePacMan(pacRow, pacCol, moveKey, currentScore);
+        movePacMan(moveKey);
         if (gameOver) break;
 
-        // If frightened mode => random movement
+        // Ghosts move
         if (frightenedMode) {
-            if (switchMode) {
-                // Reverse directions once
-                BprevDr *= -1; BprevDc *= -1;
-                PprevDr *= -1; PprevDc *= -1;
-                IprevDr *= -1; IprevDc *= -1;
-                CprevDr *= -1; CprevDc *= -1;
-                switchMode = false;
-            }
-            moveGhostFrightened(Brow, Bcol, BprevDr, BprevDc, BprevTile, BLINKY_CH);
-            if (gameOver) break;
-            moveGhostFrightened(Prow, Pcol, PprevDr, PprevDc, PprevTile, PINKY_CH);
-            if (gameOver) break;
-            moveGhostFrightened(Irow, Icol, IprevDr, IprevDc, IprevTile, INKY_CH);
-            if (gameOver) break;
-            moveGhostFrightened(Crow, Ccol, CprevDr, CprevDc, CprevTile, CLYDE_CH);
-            if (gameOver) break;
-
-            continue; // do not run normal chase logic
+            handleFrightenedMode();
+        }
+        else {
+            handleNormalMode();
         }
 
-        // Normal mode chase
-        moveGhostChase(Brow, Bcol, BprevDr, BprevDc, BprevTile, BLINKY_CH, pacRow, pacCol);
         if (gameOver) break;
-
-        if (currentScore >= 20) {
-            activateP(Prow, Pcol, PprevDr, PprevDc, PprevTile, pacRow, pacCol, pacOrientation);
-            if (gameOver) break;
-        }
-
-        if (currentScore >= 40) {
-            activateI(Irow, Icol, IprevDr, IprevDc, IprevTile, pacRow, pacCol, Brow, Bcol, pacOrientation);
-            if (gameOver) break;
-        }
-
-        if (currentScore >= 60) {
-            activateC(Crow, Ccol, CprevDr, CprevDc, CprevTile, pacRow, pacCol);
-            if (gameOver) break;
-        }
     }
 }
 
+// -----------------------------------------------------
+// MAIN
+// -----------------------------------------------------
 int main() {
     srand((unsigned)time(NULL));
 
@@ -641,38 +737,22 @@ int main() {
         return 1;
     }
 
-    int totalPellets = maxScorePellets();
+    totalPellets = maxScorePellets();
 
-    int pacRow = 0, pacCol = 0;
+    // Locate Pac-Man
     if (!findCharacter(PACMAN_CH, pacRow, pacCol)) {
         std::cerr << "Error: Pac-Man not found in map!\n";
         cleanupMatrix();
         return 1;
     }
 
-    int Brow = 0, Bcol = 0;
-    int Prow = 0, Pcol = 0;
-    int Irow = 0, Icol = 0;
-    int Crow= 0, Ccol = 0;
+    // Locate ghosts (if they exist on the map)
     findCharacter(BLINKY_CH, Brow, Bcol);
-    findCharacter(PINKY_CH,  Prow, Pcol);
-    findCharacter(INKY_CH,   Irow, Icol);
-    findCharacter(CLYDE_CH,  Crow, Ccol);
+    findCharacter(PINKY_CH, Prow, Pcol);
+    findCharacter(INKY_CH, Irow, Icol);
+    findCharacter(CLYDE_CH, Crow, Ccol);
 
-    // Initialize
-    BprevTile = ' ';
-    PprevTile = ' ';
-    IprevTile = ' ';
-    CprevTile = ' ';
-
-    char pacOrientation = 'd'; // Default facing right
-
-    runGame(pacRow, pacCol, pacOrientation,
-            Brow, Bcol,
-            Prow, Pcol,
-            Irow, Icol,
-            Crow, Ccol,
-            totalPellets);
+    runGame();
 
     cleanupMatrix();
     return 0;
